@@ -19,11 +19,44 @@
     <link rel="stylesheet" href="{{{base}}}/{{{.}}}" />
     {{/cssPaths}}
 
+    <script src="/_assets/jquery-3.4.1.min.js"></script>
+
     {{#watch}}
     <script>
       document.write('<script src="http://' + (location.host || 'localhost').split(':')[0] + ':35729/livereload.js?snipver=1"></' + 'script>');
     </script>
     {{/watch}}
+
+    <style>
+      .reveal blockquote {
+        padding: 5px 15px;
+      }
+      .reveal blockquote > p {
+        font-size: 20px !important;
+        font-style: normal !important;
+        text-align: left !important;
+        text-indent: 2em !important;
+        margin: .5em 0 !important;
+        width: 100% !important;
+      }
+      .reveal li {
+        line-height: 150% !important;
+        margin: .5em 0 !important;
+      }
+      .reveal ul ul, .reveal ul ol,
+      .reveal ol ul, .reveal ol ol {
+        margin-left: 0 !important;
+      }
+      .reveal .tiny-slide {
+        font-size: .4em;
+      }
+      .reveal .small-slide {
+        font-size: .6em;
+      }
+      .reveal .medium-slide {
+        font-size: .8em;
+      }
+    </style>
   </head>
   <body>
     <div class="reveal">
@@ -77,7 +110,169 @@
     {{/scriptPaths}}
 
     <script>
+      class TTSClass {
+        constructor() {
+          this.synth = window.speechSynthesis;
+          this.queue = [];
+          this.defaultPitch = 1;
+          this.defaultRate = 1.15;
+          this.defaultVolume = 1;
+          this.defaultVoice = null;
+          this.defaultVoiceName = null;
+          this.loadVoices();
+          this.synth.addEventListener('voicechanged', e => {
+            this.loadVoices();
+          }, false);
+        }
+        loadVoices() {
+          let voices = this.synth.getVoices();
+          this.defaultVoice = voices.find(voice => voice.default);
+          if (this.defaultVoiceName) {
+            let voice = voices.find(voice => voice.name.toUpperCase() === this.defaultVoiceName.toUpperCase());
+            if (voice) this.defaultVoice = voice;
+          }
+        }
+        getVoices() {
+          return this.synth.getVoices().sort((a, b) => {
+            let str1 = a.name.toUpperCase();
+            let str2 = b.name.toUpperCase();
+            if (str1 < str2) return -1;
+            if (str1 > str2) return 1;
+            return 0;
+          });
+        }
+        setDefaultVoice(name) {
+          this.defaultVoiceName = name;
+          this.loadVoices();
+        }
+        getDefaultVoice() {
+          return this.defaultVoice;
+        }
+        endCallback() {
+          if (this.queue.length) {
+            this.startUtter(this.queue.shift());
+          }
+        }
+        startUtter(utter) {
+          utter.addEventListener('end', () => {
+            this.endCallback();
+          }, false);
+          utter.addEventListener('error', (e) => {
+            console.error(e);
+          }, false);
+          this.synth.speak(utter);
+        }
+        addToQueue({
+          text,
+          pitch = this.defaultPitch,
+          rate = this.defaultRate,
+          volume = this.defaultVolume,
+          voice = this.defaultVoice
+        }) {
+          let utter = new SpeechSynthesisUtterance(text);
+          utter.voice = voice;
+          utter.pitch = pitch;
+          utter.rate = rate;
+          utter.volume = volume;
+          if (this.synth.speaking || this.queue.length) {
+            this.queue.push(utter);
+          } else {
+            this.startUtter(utter);
+          }
+        }
+      }
+
+      let TTS = new TTSClass();
+      let speechActive = false;
+      const storageKeys = {
+        selectedVoice: 'reveal-md.selectedVoice'
+      };
+      function loadSelectedVoice() {
+        let name = localStorage.getItem(storageKeys.selectedVoice);
+        if (name) TTS.setDefaultVoice(name);
+      }
+      function saveSelectedVoice(voice) {
+        if (voice) localStorage.setItem(storageKeys.selectedVoice, voice.name);
+      }
+      function selectVoice() {
+        let voices = TTS.getVoices();
+        let index = parseInt(prompt(
+          ['Select a voice below:'].concat(voices.map((voice, i) => {
+            let str = `${i}. ${voice.name} (${voice.lang})`;
+            if (voice.default) str += ' [default]';
+            if (voice === TTS.getDefaultVoice()) str += ' <selected>';
+            return str;
+          })).join('\n')
+        ));
+        if (index < 0 || index >= voices.length) return;
+        let voice = voices[index];
+        TTS.setDefaultVoice(voice.name);
+        saveSelectedVoice(voice);
+      }
+      window.addEventListener('load', loadSelectedVoice, false);
+
+      function loadScriptContent(script) {
+        if (script.classList.contains('speech-copy')) {
+          script.textContent = script.parentNode.textContent;
+        }
+      }
+      function speakScript(script, options) {
+        TTS.addToQueue(Object.assign({
+          text: script.textContent
+        }, options || {}));
+        console.log(script.textContent);
+        script.classList.add('emitted');
+      }
+      function slideSpeechHandler() {
+        if (!speechActive) return;
+        let $slide = $(Reveal.getCurrentSlide());
+        let $scripts = $slide.find('script:not(.emitted)');
+        $scripts.each((i, script) => {
+          let $script = $(script);
+          if ($script.hasClass('slide-speech')) {
+            speakScript(script);
+          } else if ($script.hasClass('part-speech')) {
+            if (!$script.parents('.fragment').length) {
+              loadScriptContent(script);
+              speakScript(script);
+            }
+          }
+        });
+      }
+      function fragmentSpeechHandler(e) {
+        if (!speechActive) return;
+        let fragment = e.fragment;
+        let $fragment = $(fragment);
+        let $scripts = $fragment.find('script:not(.emitted)');
+        $scripts.each((i, script) => {
+          let $script = $(script);
+          if ($script.hasClass('part-speech')) {
+            if ($script.parentsUntil($fragment, '.fragment').length <= 1) {
+              loadScriptContent(script);
+              speakScript(script);
+            }
+          }
+        });
+      }
+
       Reveal.initialize(options);
+      Reveal.addEventListener('slidechanged', slideSpeechHandler, false);
+      Reveal.addEventListener('fragmentshown', fragmentSpeechHandler, false);
+
+      window.addEventListener('keydown', function (e) {
+        switch (e.which) {
+          case 80: // P
+            selectVoice();
+            break;
+          case 88: // X
+            speechActive = true;
+            slideSpeechHandler();
+            break;
+          case 82: // R
+            $('.reveal script.emitted').removeClass('emitted');
+            break;
+        }
+      }, false);
     </script>
   </body>
 </html>

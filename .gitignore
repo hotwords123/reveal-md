@@ -3,3 +3,5 @@ node_modules
 dist
 _static
 .vscode
+slides
+package-lock.json

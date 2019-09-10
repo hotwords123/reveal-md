@@ -1,0 +1,4 @@
+{
+    "port": 1926,
+    "preprocessor": "preproc/manager"
+}

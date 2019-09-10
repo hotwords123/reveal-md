@@ -27,7 +27,8 @@
   "scripts": {
     "test": "bron test/*.spec.js",
     "lint": "eslint lib/**/*.js",
-    "format": "prettier --write lib/**/*.js bin/*.js test/*.js *.md"
+    "format": "prettier --write lib/**/*.js bin/*.js test/*.js *.md",
+    "start": "node bin/reveal-md slides --disable-auto-open"
   },
   "dependencies": {
     "debug": "4.1.1",
